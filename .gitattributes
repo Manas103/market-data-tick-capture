@@ -1,0 +1,5 @@
+# This project builds and runs on Linux. Keep source and scripts LF so a
+# checkout on Windows does not hand CRLF to the toolchain.
+* text=auto eol=lf
+*.png binary
+*.tcap binary

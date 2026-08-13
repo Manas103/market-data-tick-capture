@@ -1,0 +1,4 @@
+# Python side of the project (independent capture reader + analytics).
+# Tested with the versions noted; nothing here is version-sensitive.
+numpy>=1.24     # tested with 2.2.6
+pandas>=2.0     # tested with 2.3.3

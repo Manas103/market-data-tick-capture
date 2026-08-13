@@ -1,0 +1,18 @@
+# build output
+build/
+*.o
+*.a
+
+# captured sessions and derived artifacts -- regenerate with
+#   build/live_capture 2000000 /tmp/session.tcap 0 400000
+*.tcap
+*.tcap.digests
+*.rows
+*.csv
+dump.txt
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
