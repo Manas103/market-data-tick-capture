@@ -1,0 +1,15 @@
+=== pinned-core replay throughput ===
+capture        : /tmp/session_ab.tcap
+pinned core    : 0 (sched_setaffinity OK)
+logical cores visible to this process: 12
+records loaded : 2000000 (load not timed; this benchmark is decode+apply only)
+pass 0: 0.367s, 5453640 msgs/sec (682314 resting orders)
+pass 1: 0.291s, 6867563 msgs/sec (682314 resting orders)
+pass 2: 0.333s, 6013431 msgs/sec (682314 resting orders)
+pass 3: 0.296s, 6756178 msgs/sec (682314 resting orders)
+pass 4: 0.322s, 6213546 msgs/sec (682314 resting orders)
+
+best pass rate   : 6867563 msgs/sec
+median pass rate : 6213546 msgs/sec
+target: 1,000,000+ msgs/sec sustained on one pinned core
+meets_claim (best of 5 passes): true

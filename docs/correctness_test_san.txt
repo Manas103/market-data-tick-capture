@@ -1,0 +1,18 @@
+/mnt/c/Users/Manas/Downloads/Total Job Application process flow/projects/market-data-tick-capture/include/column_codec.hpp:129:76: runtime error: signed integer overflow: 0 - -9223372036854775808 cannot be represented in type 'long int'
+/mnt/c/Users/Manas/Downloads/Total Job Application process flow/projects/market-data-tick-capture/include/column_codec.hpp:225:60: runtime error: signed integer overflow: -9223372036854775808 + -9223372036854775808 cannot be represented in type 'long int'
+=== market-data-tick-capture correctness ===
+
+sha256 (FIPS 180-4 vectors)
+varint / zigzag
+column codecs
+wire protocol
+L3 order book
+book universe
+canonical serialization
+capture format round-trip
+end-to-end capture -> replay (no network)
+sequence gap detection
+simulated feed sanity (book never crosses)
+
+600 checks, 0 failures
+PASS

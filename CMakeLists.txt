@@ -34,5 +34,18 @@ target_link_libraries(capture_bench    Threads::Threads)
 target_link_libraries(capture_dump     Threads::Threads)
 target_link_libraries(correctness_test Threads::Threads)
 
+# Gateway extension: A/B line arbitration + TCP gap recovery, OUCH-style
+# order entry with sequenced resend on reconnect, and a pinned-core replay
+# throughput benchmark (see README, "Extended: Equity Exchange Connectivity
+# Gateway").
+add_executable(live_capture_ab  src/live_capture_ab.cpp)
+add_executable(replay_bench     src/replay_bench.cpp)
+add_executable(ouch_session_test tests/ouch_session_test.cpp)
+
+target_link_libraries(live_capture_ab   Threads::Threads)
+target_link_libraries(replay_bench      Threads::Threads)
+target_link_libraries(ouch_session_test Threads::Threads)
+
 enable_testing()
 add_test(NAME correctness COMMAND correctness_test)
+add_test(NAME ouch_session COMMAND ouch_session_test)

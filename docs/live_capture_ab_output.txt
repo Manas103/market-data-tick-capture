@@ -1,0 +1,39 @@
+=== A/B line arbitration + TCP gap recovery ===
+messages         : 2000000
+line A           : 239.7.13.21:34712
+line B           : 239.7.13.25:34715
+capture          : /tmp/session_ab.tcap
+datagrams (dry run count) : 43528
+gap recovery TCP : 127.0.0.1:40897
+
+--- transport ---
+sent A / dropped A         : 35528 / 8000
+sent B / dropped B         : 35528 / 8000
+received A / received B    : 33572 / 33715
+elapsed                    : 5.948 s
+
+--- arbitration ---
+messages delivered         : 2000000
+delivered from line A      : 930753
+delivered from line B      : 760599
+duplicate datagrams dropped: 26701
+malformed                  : 0
+
+--- gap recovery (TCP retransmit path) ---
+seeded double-line drops   : 5000 (target)
+gap events (both lines down): 4265
+messages inside those gaps : 308648
+messages recovered via TCP : 308648
+messages unrecovered       : 0
+gap-recovery requests served: 4265
+gap-recovery records served : 308648
+
+--- book divergence check (oracle: direct apply, no transport) ---
+oracle book sha256 : 80adc41ab3854fe70706aa7da2de7d6198d81cb4a9f05365e6b41d1c546aec01
+live   book sha256 : 80adc41ab3854fe70706aa7da2de7d6198d81cb4a9f05365e6b41d1c546aec01
+oracle resting orders : 682314
+live   resting orders : 682314
+PASS: reconstructed book matches exactly the oracle
+
+gap events observed (contiguous merged ranges, <= 5000 seeded double-line-drop datagrams when adjacent drops merge): 4265
+all 5000 seeded double-line-drop datagrams (308648 messages) recovered with zero book divergence: true

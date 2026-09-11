@@ -1,0 +1,12 @@
+=== Test 1: sequenced resend on reconnect ===
+first-session sequences: 1-12, reconnect resend: 13-20, union: 20/20 exact.
+connections served: 2, resends sent: 8
+
+=== Test 2: tick-to-order latency ===
+acks drained (untimed, after the loop): 20000 / 20000
+iterations=20000
+tick_to_order  mean=   6586.8ns  p50=   6631.0ns  p90=   9484.0ns  p99=  23226.0ns  p99.9=  53890.0ns  max= 288772.0ns
+target: p99 < 10000ns (10us)
+meets_claim: false
+
+PASS: all OUCH session checks passed.
