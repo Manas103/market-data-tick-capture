@@ -46,6 +46,14 @@ target_link_libraries(live_capture_ab   Threads::Threads)
 target_link_libraries(replay_bench      Threads::Threads)
 target_link_libraries(ouch_session_test Threads::Threads)
 
+# Typed predicate query path extension (see README, "Extended: Typed
+# Predicate Query Path"): exports a capture to pcap for the tshark-plus-grep
+# baseline, and the typed columnar query path it is measured against.
+add_executable(tcap_to_pcap src/tcap_to_pcap.cpp)
+add_executable(tcap_query   src/tcap_query.cpp)
+target_link_libraries(tcap_to_pcap Threads::Threads)
+target_link_libraries(tcap_query   Threads::Threads)
+
 enable_testing()
 add_test(NAME correctness COMMAND correctness_test)
 add_test(NAME ouch_session COMMAND ouch_session_test)

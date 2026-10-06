@@ -1,0 +1,39 @@
+=== capture ===
+messages decoded    : 4011877
+gap events          : 1
+messages lost       : 
+real	0m6.920s
+user	0m5.774s
+sys	0m2.221s
+
+real	0m6.926s
+user	0m5.816s
+sys	0m2.195s
+
+real	0m6.853s
+user	0m5.613s
+sys	0m2.303s
+3409 Oct  5 20:20 /tmp/big.pcap
+-rw-r--r-- 1 manas manas  48984921 Oct  5 20:20 /tmp/big.tcap
+=== cross-validation ===
+instrument=   5 type=A  cpp(scanned=4011877, matched=15715)  python(scanned=4011877, matched=15715)  MATCH
+instrument=   5 type=E  cpp(scanned=4011877, matched=4631)  python(scanned=4011877, matched=4631)  MATCH
+instrument=  17 type=A  cpp(scanned=4011877, matched=15787)  python(scanned=4011877, matched=15787)  MATCH
+instrument=  42 type=X  cpp(scanned=4011877, matched=4735)  python(scanned=4011877, matched=4735)  MATCH
+instrument=  90 type=D  cpp(scanned=4011877, matched=4581)  python(scanned=4011877, matched=4581)  MATCH
+instrument=   1 type=U  cpp(scanned=4011877, matched=1599)  python(scanned=4011877, matched=1599)  MATCH
+
+PASS: typed query path and tshark-plus-grep baseline agree on all 6 predicates.
+=== timed benchmark (3 runs each) ===
+--- typed query run  ---
+scanned=4011877 matched=15715 instrument_id=5 msg_type=A elapsed_ms=22.767 bytes_touched_cols=2
+--- typed query run  ---
+scanned=4011877 matched=15715 instrument_id=5 msg_type=A elapsed_ms=21.070 bytes_touched_cols=2
+--- typed query run  ---
+scanned=4011877 matched=15715 instrument_id=5 msg_type=A elapsed_ms=21.145 bytes_touched_cols=2
+--- tshark-plus-grep run  ---
+scanned=4011877 matched=15715 instrument_id=5 msg_type=A elapsed_ms=6891.038
+--- tshark-plus-grep run  ---
+scanned=4011877 matched=15715 instrument_id=5 msg_type=A elapsed_ms=6896.110
+--- tshark-plus-grep run  ---
+scanned=4011877 matched=15715 instrument_id=5 msg_type=A elapsed_ms=6823.954

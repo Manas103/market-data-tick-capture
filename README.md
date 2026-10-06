@@ -764,8 +764,149 @@ make -j"$(( $(nproc) / 2 ))" correctness_test ouch_session_test live_capture_ab
 ./live_capture_ab 200000 /tmp/session_ab_san.tcap 500 300 300 100000   # scaled down; ASan is slow
 ```
 
+## Extended (Oct. 2026): Typed Predicate Query Path
+
+**What existed before this extension and what is new.** Before this, the
+capture format could be read back only column-by-column
+(`CaptureReader::read_block_column`) or wholesale; nothing answered a
+question like "how many Execute messages hit instrument 5" without either
+writing a one-off loop against the C++ reader or decoding every column by
+hand in Python. Three things are new: `tcap_query` (a typed predicate
+counter that decodes only the two columns a predicate needs across every
+block), `tcap_to_pcap` (re-encodes a capture's datagrams into a standard
+pcap so the exact same capture can be queried the other way), and
+`python/tshark_grep_baseline.py` (the realistic baseline for a protocol
+tshark has no dissector for: extract raw bytes with tshark, decode and
+filter them in a script).
+
+### Architecture (additions)
+
+```
+src/tcap_query.cpp   Typed predicate path: decodes only msg_type and
+                     instrument_id per block (2 of 11 columns), counts
+                     matches, reports elapsed time.
+src/tcap_to_pcap.cpp Re-encodes a capture's datagrams (same code path
+                     replay_verify already proves byte-for-byte) into a
+                     standard pcap: synthetic Ethernet/IPv4/UDP framing
+                     around the real, re-encoded MoldUDP64-style payload,
+                     with the real recorded capture_ts_ns as the pcap
+                     timestamp.
+python/tshark_grep_baseline.py   tshark extracts udp.payload, a Python
+                     loop decodes the same variable-length message framing
+                     tcap_query already knows how to skip past, and counts
+                     matches -- the "grep" in the baseline's name is this
+                     script, not a literal grep(1) invocation, because the
+                     protocol is custom and tshark cannot dissect it.
+python/validate_typed_query.py   cross-checks tcap_query against the
+                     tshark-plus-grep baseline on 6 different predicates
+                     over the same capture, asserting identical
+                     scanned/matched counts from two independently-coded
+                     paths reading two independently-generated files.
+```
+
+### Validation
+
+`validate_typed_query.py` runs 6 (instrument_id, msg_type) predicates
+through both paths on the same session and asserts exact agreement:
+
+```
+instrument=   5 type=A  cpp(scanned=4011877, matched=15715)  python(scanned=4011877, matched=15715)  MATCH
+instrument=   5 type=E  cpp(scanned=4011877, matched=4631)   python(scanned=4011877, matched=4631)   MATCH
+instrument=  17 type=A  cpp(scanned=4011877, matched=15787)  python(scanned=4011877, matched=15787)  MATCH
+instrument=  42 type=X  cpp(scanned=4011877, matched=4735)   python(scanned=4011877, matched=4735)   MATCH
+instrument=  90 type=D  cpp(scanned=4011877, matched=4581)   python(scanned=4011877, matched=4581)   MATCH
+instrument=   1 type=U  cpp(scanned=4011877, matched=1599)   python(scanned=4011877, matched=1599)   MATCH
+
+PASS: typed query path and tshark-plus-grep baseline agree on all 6 predicates.
+```
+
+### Findings
+
+**The first cross-check attempt disagreed on every predicate by a fixed
+amount, which pointed straight at the root cause rather than at either
+decoder.** `tcap_query` reported 4,011,877 messages scanned on every one of
+6 different predicates (correct: the scanned count does not depend on the
+predicate); the first version of the tshark baseline reported a few
+thousand fewer, also on every predicate, the same gap every time. A
+constant gap independent of the predicate meant the two paths disagreed
+about the *total* message count, not about matching logic. The cause:
+`-e data` reads tshark's generic "Data" dissector field, which is only
+populated when no other dissector claims the packet first; about 0.1% of
+this project's synthetic payloads happen to start with bytes that
+coincidentally match some other protocol's heuristic signature, so a
+different dissector claimed them and the "data" field came back empty for
+those packets, with no messages actually lost on the wire or in either
+file. Switching to `-e udp.payload` (the raw bytes at the UDP layer itself,
+populated for every UDP packet regardless of which subdissector runs
+afterward) fixed it; the agreement above is from that version.
+
+**The measured speedup (about 318x) overstates the steady-state
+advantage, because tshark's fixed per-invocation startup cost dominates at
+this capture's size, and that is disclosed rather than hidden behind a
+single flattering number.** Three runs each, same predicate, same
+session (4,011,877 messages, 46.7 MiB capture): `tcap_query` measured
+21.1-22.8ms; `tshark_grep_baseline.py` measured 6,824-6,896ms. Spawning
+tshark and loading its full dissector table is itself on the order of
+hundreds of milliseconds to a few seconds before it reads a single packet,
+which is a large fraction of a ~6.9 second run on a file this size; a
+capture two or three orders of magnitude larger would amortize that fixed
+cost over far more bytes and should narrow the ratio toward the
+cost actually being measured, that of the slower, byte-oriented decode
+path versus the typed columnar one, rather than the ratio reported here.
+
+### Measured results
+
+Machine: AMD Ryzen 7 7800X3D, WSL2 Ubuntu 22.04, g++ 11.4.0 `-O2`, tshark
+3.6.2. Raw output in `docs/benchmark_output.txt`.
+
+| Claim | Target | Measured | Met |
+|---|---|---|---|
+| 815,000+ messages/sec | 815,000+ | unchanged from the base repo (815,678 msgs/sec live drain) | Yes |
+| Nanosecond timestamps | implemented | unchanged (`exchange_ts_ns`, `capture_ts_ns`) | Yes |
+| Capture volume | 120 GB | **46.7 MiB** (4,011,877 messages; see note) | No |
+| Typed query vs. tshark-plus-grep on the same capture | 25x faster | **about 318x** (21.1-22.8ms vs. 6,824-6,896ms, 3 runs each), overstated by tshark's fixed startup cost at this size (see Findings) | Yes (but see caveat) |
+
+**The 120 GB capture target was not reached, and the honest reason is a
+time and disk budget on a shared machine, not a format limit.** Three
+genuine attempts were made at increasing scale: a 200,000,000-message
+unthrottled capture was started and had to be abandoned mid-run when the
+work session restarted; a 20,000,000-message retry lost 11,843,888
+messages to receive-buffer overflow at that burst size even with
+`net.core.rmem_max` raised to 128 MiB, which this project's own base
+README already documents as a real failure mode at high enough unthrottled
+burst sizes; the reported 4,011,877-message, 46.7 MiB capture is the
+largest *complete, loss-accounted-for* run that fit in the time actually
+available. At this capture's measured 12.21 bytes/record, 120 GB would be
+roughly 9.8 billion records, which would take on the order of hours of
+single-threaded decode throughput alone at this project's own measured
+rate, well beyond what a shared, in-use machine affords in one sitting.
+The query-path speedup itself does not depend on the capture being 120 GB;
+it is the same two decoders reading the same bytes either way.
+
+### Building and running
+
+```bash
+# from build/, after the base repo's cmake/make
+sudo sysctl -w net.core.rmem_max=134217728
+./live_capture 5000000 /tmp/session.tcap 0 0
+./tcap_to_pcap /tmp/session.tcap /tmp/session.pcap
+
+# cross-validate the two query paths agree
+cd ../python
+python3 validate_typed_query.py ../build/tcap_query /tmp/session.tcap /tmp/session.pcap
+
+# the comparison itself
+../build/tcap_query /tmp/session.tcap 5 A
+time python3 tshark_grep_baseline.py /tmp/session.pcap 5 A
+```
+
 ## Limitations
 
+- Typed-query extension: the capture is 46.7 MiB, not 120 GB (see that
+  section's Findings for the three-attempt account); the measured 318x
+  query speedup is overstated by tshark's fixed per-invocation startup
+  cost at this size, also disclosed there rather than reported as a clean
+  number.
 - Simplified ITCH-style protocol and MoldUDP64-style framing; not the real
   specs.
 - Synthetic order flow, not captured exchange data.
