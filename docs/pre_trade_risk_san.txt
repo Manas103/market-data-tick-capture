@@ -1,0 +1,9 @@
+seeded breaches injected       : 500
+  position breaches            : 167
+  notional breaches             : 167
+  message-rate breaches         : 166
+seeded breaches rejected       : 500 / 500
+valid orders submitted         : 4500
+valid orders accepted          : 4500 / 4500
+valid orders falsely rejected  : 0
+PASS: all seeded breaches rejected, zero false rejects on valid orders.

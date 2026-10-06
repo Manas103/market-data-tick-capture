@@ -11,6 +11,10 @@ build/
 *.csv
 dump.txt
 
+# order_router_bench's route-mode log is a committed raw-output artifact
+# (the independent Python oracle cross-check reads it), not derived data.
+!docs/order_router_route_log.csv
+
 # python
 __pycache__/
 *.py[cod]

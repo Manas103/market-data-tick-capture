@@ -900,6 +900,134 @@ python3 validate_typed_query.py ../build/tcap_query /tmp/session.tcap /tmp/sessi
 time python3 tshark_grep_baseline.py /tmp/session.pcap 5 A
 ```
 
+## Extended (Oct. 2026): Multi-Venue Order Router with Pre-Trade Risk
+
+**What existed before this extension and what is new.** Before this, the
+gateway extension gave the repo a real order-entry session (OUCH-style,
+sequenced resend on reconnect) and real session recovery, but every order
+went to exactly one venue and nothing checked an order against any limit
+before it left the process. Three things are new: `PreTradeRiskChecker`
+(`include/pre_trade_risk.hpp`), inline position, notional and message-rate
+checks that run before an order is allowed anywhere near the wire;
+`VenueRouter` (`include/venue_router.hpp`), best-price routing across
+multiple simulated venues' independently-generated order flow; and
+`src/order_router_bench.cpp`, the harness that drives both and measures
+them against a stream of client orders, some deliberately seeded to
+breach every limit the checker enforces.
+
+### Architecture (additions)
+
+```
+include/pre_trade_risk.hpp  PreTradeRiskChecker: per-instrument net
+                             position, per-order notional, and a sliding
+                             message-rate window, checked in that order.
+                             State (position, message timestamps) is
+                             committed only on acceptance, so a rejected
+                             order never moves the position it would have
+                             breached.
+include/venue_router.hpp    VenueRouter::route(): given each venue's
+                             current top-of-book quote on the required
+                             side, picks the best price (lowest ask for a
+                             Buy, highest bid for a Sell); a venue with no
+                             quote is skipped, not an error; ties break to
+                             the lowest venue index.
+src/order_router_bench.cpp  Two modes. risk: seeds exactly 500 breach
+                             orders (position, notional, message-rate,
+                             roughly even split) into 4,500 valid orders
+                             and checks the checker's verdict on every one.
+                             route: 40 independent sessions, each with 3
+                             venues running their own MarketSimulator (so
+                             their books quote different prices), routes
+                             200 client orders per session to the
+                             best-priced venue and logs every venue's raw
+                             quote plus the chosen venue to a CSV.
+tests/order_router_test.cpp Hand-constructed boundary checks: position
+                             limit at/one-over the limit, notional at/over
+                             the limit, message-rate window filling and
+                             then freeing up, per-instrument state
+                             isolation, best-price selection, deterministic
+                             tie-break, a thin venue being skipped, and no
+                             venue quoting at all.
+python/validate_routing.py  Independent, from-scratch Python oracle:
+                             reads the raw per-venue quotes
+                             order_router_bench logged (not the C++
+                             router's own decision logic) and recomputes
+                             which venue should have won, for every order
+                             in every session.
+```
+
+**Not on a real wire.** Neither mode in `order_router_bench` opens a
+socket. "Before the wire" is validated by construction: a risk-rejected
+order's data never reaches `VenueRouter::route` at all, which is visible
+directly in `run_risk_mode()`'s control flow. The actual OUCH order-entry
+transport and its own measured tick-to-order latency are the existing
+Sep. 2026 gateway extension above, reused unchanged rather than
+re-measured, since this extension's new claims (multi-venue routing,
+pre-trade risk) are orthogonal to transport latency.
+
+### Validation
+
+1. **Unit tests** (`order_router_test`): 25 checks, 0 failures, covering
+   every boundary named above.
+2. **Seeded risk breaches.** 500 orders are deliberately constructed to
+   breach exactly one limit each (roughly 167/167/166 split across
+   position, notional, message-rate); 4,500 ordinary orders are
+   constructed to stay inside every limit. The harness asserts both
+   directions: every seeded breach rejected, every valid order accepted.
+3. **Independent routing oracle.** `order_router_bench route` logs the raw
+   quotes it saw from all 3 venues for every one of 8,000 client orders
+   (40 sessions x 200 orders) without logging its own reasoning; only
+   afterward does `python/validate_routing.py`, a separately written
+   best-price calculation with its own tie-break logic, recompute the
+   answer from those same raw quotes and diff against the C++ router's
+   recorded choice.
+4. **ASan+UBSan.** `order_router_test`, `order_router_bench risk` and
+   `order_router_bench route` all run clean under
+   `-fsanitize=address,undefined` (`docs/order_router_test_san.txt`,
+   `docs/pre_trade_risk_san.txt`, `docs/order_router_route_san.txt`).
+
+### Measured results
+
+Machine: AMD Ryzen 7 7800X3D, WSL2 Ubuntu 22.04 (12 logical cores visible
+to WSL), Windows 11 build 10.0.26200, g++ 11.4.0 `-O2`. Raw output in
+`docs/`.
+
+| Claim | Target | Measured | Meets claim |
+|---|---|---|---|
+| Real-time order path across 3 simulated venues | implemented and correct | 3 independent `BookUniverse`+`MarketSimulator` venues per session, each quoting its own top-of-book; routed by `VenueRouter` | Yes |
+| Inline pre-trade risk checks | 500 of 500 seeded breaches rejected | **500 / 500** seeded position/notional/message-rate breaches rejected; **4,500 / 4,500** valid orders accepted, 0 false rejects (`docs/pre_trade_risk_output.txt`) | Yes |
+| Routing matched an independent best-price oracle | every order, 40 simulated sessions | **8,000 / 8,000** orders (40 sessions x 200) matched the independent Python oracle's venue choice, 0 mismatches (`docs/routing_validation_output.txt`) | Yes |
+| OUCH-style session recovery | 20 of 20 sequence numbers | unchanged from the Sep. 2026 extension above (reused, not re-measured) | Yes |
+| Tick-to-order latency | p99 < 10us on loopback | unchanged from the Sep. 2026 extension above: **p99 8.2us** (reused, not re-measured; this extension's additions are upstream of order entry, not inside its hot path) | Yes |
+
+### Building and running
+
+```bash
+# from build/, after the base repo's cmake
+make -j"$(( $(nproc) / 2 ))" order_router_bench order_router_test
+
+./order_router_test
+./order_router_bench risk   # -> docs/pre_trade_risk_output.txt
+./order_router_bench route  # -> docs/order_router_route_log.csv
+
+cd ../python
+python3 validate_routing.py ../docs/order_router_route_log.csv
+```
+
+ASan+UBSan build (same build directory as the gateway extension's):
+
+```bash
+mkdir -p ~/build/mdtc-san && cd ~/build/mdtc-san
+cmake /path/to/market-data-tick-capture \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g -O1" \
+  -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+make -j"$(( $(nproc) / 2 ))" order_router_test order_router_bench
+./order_router_test
+./order_router_bench risk
+./order_router_bench route
+```
+
 ## Limitations
 
 - Typed-query extension: the capture is 46.7 MiB, not 120 GB (see that
@@ -943,3 +1071,11 @@ time python3 tshark_grep_baseline.py /tmp/session.pcap 5 A
   frame and handing it to the kernel's socket send buffer, not a full
   order-to-acknowledgment round trip and not any market-data decode time;
   see Findings for exactly what the three measurement attempts isolated.
+- Multi-venue router extension: the 3 venues are 3 independent in-process
+  `MarketSimulator`+`BookUniverse` instances, not 3 real feed handlers over
+  the network; routing decisions never touch a real socket (the actual
+  OUCH wire path is the unchanged, separately-measured gateway extension
+  above). `PreTradeRiskChecker`'s position model is order-flow risk (every
+  accepted order moves the position), not post-fill risk against actual
+  executions, and it has no awareness of cancels or replaces reducing an
+  earlier order's exposure.

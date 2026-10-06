@@ -54,6 +54,16 @@ add_executable(tcap_query   src/tcap_query.cpp)
 target_link_libraries(tcap_to_pcap Threads::Threads)
 target_link_libraries(tcap_query   Threads::Threads)
 
+# Multi-venue order router extension (see README, "Extended: Multi-Venue
+# Order Router with Pre-Trade Risk"): best-price routing across 3 simulated
+# venues, inline pre-trade risk checks, and the demo/measurement binary
+# that drives both.
+add_executable(order_router_bench src/order_router_bench.cpp)
+add_executable(order_router_test  tests/order_router_test.cpp)
+target_link_libraries(order_router_bench Threads::Threads)
+target_link_libraries(order_router_test  Threads::Threads)
+
 enable_testing()
 add_test(NAME correctness COMMAND correctness_test)
 add_test(NAME ouch_session COMMAND ouch_session_test)
+add_test(NAME order_router COMMAND order_router_test)

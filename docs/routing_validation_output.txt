@@ -1,0 +1,3 @@
+orders cross-checked: 8000
+mismatches: 0
+PASS: independent Python oracle matched the C++ router's venue choice on all 8000 orders.
