@@ -1,0 +1,17 @@
+clean sessions: 0 of 40 held (0 expected)
+SEQ_STRICTLY_INCREASING                       20 of 20 variants caught
+CAPTURE_TS_MONOTONIC                          20 of 20 variants caught
+EXCHANGE_TS_MONOTONIC_PER_INSTRUMENT          20 of 20 variants caught
+SESSION_STARTS_AT_DATAGRAM_BOUNDARY           20 of 20 variants caught
+NO_CROSSED_BOOK                               20 of 20 variants caught
+ADD_PRICE_NON_NEGATIVE                        20 of 20 variants caught
+ADD_QTY_POSITIVE                              20 of 20 variants caught
+ADD_ORDER_ID_NOT_ALREADY_RESTING              20 of 20 variants caught
+REPLACE_NEW_ORDER_ID_NOT_ALREADY_RESTING      20 of 20 variants caught
+EXECUTE_REFERENCES_RESTING_ORDER              20 of 20 variants caught
+EXECUTE_QTY_WITHIN_RESTING                    20 of 20 variants caught
+CANCEL_REFERENCES_RESTING_ORDER               20 of 20 variants caught
+CANCEL_QTY_WITHIN_RESTING                     20 of 20 variants caught
+DELETE_OR_REPLACE_REFERENCES_RESTING_ORDER    20 of 20 variants caught
+seeded defects: 280 of 280 caught with the failing check named
+PASS

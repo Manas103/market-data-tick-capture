@@ -2,3 +2,8 @@
 # Tested with the versions noted; nothing here is version-sensitive.
 numpy>=1.24     # tested with 2.2.6
 pandas>=2.0     # tested with 2.3.3
+
+# Parquet publication extension (see README, "Extended: Validation, Defect
+# Injection and Parquet Publication").
+pyarrow>=14     # tested with 25.0.1
+duckdb>=0.10    # tested with 1.5.6

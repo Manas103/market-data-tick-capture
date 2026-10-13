@@ -1028,6 +1028,165 @@ make -j"$(( $(nproc) / 2 ))" order_router_test order_router_bench
 ./order_router_bench route
 ```
 
+## Extended (Oct. 2026): Validation, Defect Injection and Parquet Publication
+
+**What existed before this extension and what is new.** Before this, the
+repo could decode a feed, capture it losslessly, and replay it bit for
+bit, but nothing checked whether the *content* of a session was sane, and
+nothing turned a capture into a form a downstream analytics or
+regulatory-style consumer would actually query. Three things are new:
+`SessionValidator` (`include/session_validator.hpp`), 14 named invariants
+over a record stream grouped into sequence continuity, crossed/malformed
+books, and trade-versus-book consistency; `tests/validator_defect_test.cpp`,
+the harness that proves the validator both ignores clean sessions and
+catches 280 independently-seeded defects by name; and
+`python/publish_parquet.py` plus `python/validate_publication.py`, which
+publish one or more sessions into a date/symbol partitioned Parquet
+warehouse and cross-check it against DuckDB.
+
+### Architecture (additions)
+
+```
+include/session_validator.hpp   SessionValidator: an independent shadow
+                                 order book (global order_id namespace, like
+                                 BookUniverse::index_) that raises a named
+                                 Violation instead of silently clamping or
+                                 skipping a malformed record. Every check
+                                 runs on the pre-image of a record's effect,
+                                 and a record that fails a check is not
+                                 applied, so one bad record cannot corrupt
+                                 the state used to judge the next one.
+src/generate_session.cpp        Writes a TCAP capture straight from
+                                 MarketSimulator with no network involved,
+                                 the input the publication demo needs and
+                                 live_capture has no reason to produce.
+tests/validator_defect_test.cpp 40 clean sessions (zero violations
+                                 expected) plus 14 x 20 = 280 seeded-defect
+                                 cases, each one clean base session with a
+                                 single deliberately malformed record
+                                 spliced in, asserting the expected check
+                                 fires by name.
+python/publish_parquet.py       Reads a TCAP capture with the existing
+                                 independent tickcap.TickCapture reader,
+                                 tags every record with a caller-supplied
+                                 trading date and a SYMnnn symbol derived
+                                 from instrument_id, and writes one Parquet
+                                 file per (date, symbol) in Hive-style
+                                 partitioned directories.
+python/validate_publication.py  Computes per-(date, symbol) record counts,
+                                 qty sums and msg_type histograms two
+                                 independent ways -- straight from the TCAP
+                                 columns with numpy, and via a DuckDB query
+                                 over the published Parquet files with Hive
+                                 partitioning -- and asserts exact
+                                 agreement.
+```
+
+**Why a session has no calendar date of its own.** `docs/FORMAT.md`'s
+header carries a session id and a record count, not a date; a trading
+session is a single contiguous feed, and which calendar day it belongs to
+is metadata an operator supplies, not something a decoder can derive from
+nanosecond-resolution timestamps that start from an arbitrary epoch (see
+`MarketSimulator`'s `clock_ns_` comment). `publish_parquet.py` is told the
+date for each capture explicitly (`date=path.tcap`), exactly as a real
+publication job would be configured per trading day.
+
+### Validation
+
+1. **Zero false positives.** 40 independently-seeded clean 2,500-message
+   sessions, no defect injected into any of them, run through a fresh
+   `SessionValidator` each: 0 violations total
+   (`docs/validator_defect_output.txt`).
+2. **Zero false negatives, by construction.** One 6,000-message clean base
+   session, 14 checks x 20 variants = 280 cases. Each variant clones the
+   base session and splices in exactly one malformed record built from
+   that session's own real resting orders and book state (an unknown
+   order id, a quantity exceeding what is actually resting, a price that
+   crosses the real best quote, a duplicate order id, and so on), so every
+   defect is a realistic one rather than an arbitrary byte flip. All 280
+   are caught with the expected check's name present in the resulting
+   violation list (`docs/validator_defect_output.txt`).
+3. **ASan+UBSan.** `validator_defect_test` runs clean under
+   `-fsanitize=address,undefined` (`docs/validator_defect_test_san.txt`).
+4. **Publication cross-check.** Three 300,000-message sessions (distinct
+   trading dates) are published, then `validate_publication.py` recomputes
+   per-(date, symbol) record counts, qty sums and msg_type histograms
+   directly from the raw TCAP columns and separately via a DuckDB query
+   over the published Parquet, asserting the two agree exactly on all 48
+   partitions (`docs/validate_publication_output.txt`).
+
+### Findings
+
+**The order-id collision check first failed 19 of its 20 seeded cases, and
+the bug was in the validator, not the test.** `SessionValidator` originally
+kept one order map *per instrument* (mirroring the per-instrument price
+levels), so `REPLACE_NEW_ORDER_ID_NOT_ALREADY_RESTING` only checked for a
+collision within the replaced order's own instrument. But
+`MarketSimulator` issues order ids from one global counter shared across
+every instrument (`next_order_id_`), the same design `BookUniverse` uses
+one global `index_` for, not one per instrument. A seeded collision whose
+two orders happened to sit on different instruments was invisible to a
+per-instrument check: the colliding id was resting, just in a map the
+check never looked at. 19 of 20 variants missed for exactly this reason,
+every miss on a cross-instrument pair; the fix was moving order identity
+into one global map (`orders_`) and keeping only price-level quantities
+per instrument, matching the production class it is meant to audit
+independently rather than re-implement differently by accident.
+
+### Measured results
+
+Machine: AMD Ryzen 7 7800X3D, WSL2 Ubuntu 22.04 (12 logical cores visible
+to WSL), Windows 11 build 10.0.26200, g++ 11.4.0 `-O2`, Python 3.10.12,
+pyarrow 25.0.1, duckdb 1.5.6. Raw output in `docs/`.
+
+| Claim | Target | Measured | Meets claim |
+|---|---|---|---|
+| 14 named assertions across sequence continuity, crossed books, and trade-versus-book consistency | 14, all three categories represented | **14** (4 sequence continuity, 5 crossed/malformed books, 5 trade-versus-book consistency) | Yes |
+| Date and symbol partitioned Parquet publication | implemented and correct | 3 sessions (900,000 records) published into 48 Hive-partitioned `date=.../symbol=...` Parquet files; DuckDB query over the published files agrees exactly with an independent TCAP-column recomputation on all 48 partitions | Yes |
+| Seeded defects caught with the failing check named | 280 of 280 | **280 / 280**, each the expected check present by name in the violation list (see Findings for the one bug this caught in the validator itself) | Yes |
+| Clean sessions held (false positives) | 0 of 40 | **0 / 40** | Yes |
+| 815,000+ messages/sec live drain | 815,000+ | unchanged from the base repo (815,678 msgs/sec live drain) | Yes |
+| Replay bit-for-bit over 43,529 datagrams | SHA-256 identical | unchanged from the base repo | Yes |
+
+### Building and running
+
+```bash
+# from build/, after the base repo's cmake
+make -j"$(( $(nproc) / 2 ))" validator_defect_test generate_session
+./validator_defect_test                                   # docs/validator_defect_output.txt
+
+# three no-network sessions, one per trading date, for the publication demo
+./generate_session 101 300000 /tmp/session_2026-08-18.tcap 16
+./generate_session 102 300000 /tmp/session_2026-08-19.tcap 16
+./generate_session 103 300000 /tmp/session_2026-08-20.tcap 16
+
+cd ../python
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r ../requirements.txt
+
+python3 publish_parquet.py /tmp/published \
+  2026-08-18=/tmp/session_2026-08-18.tcap \
+  2026-08-19=/tmp/session_2026-08-19.tcap \
+  2026-08-20=/tmp/session_2026-08-20.tcap
+
+python3 validate_publication.py /tmp/published \
+  2026-08-18=/tmp/session_2026-08-18.tcap \
+  2026-08-19=/tmp/session_2026-08-19.tcap \
+  2026-08-20=/tmp/session_2026-08-20.tcap
+```
+
+ASan+UBSan build (same build directory as the gateway extension's):
+
+```bash
+mkdir -p ~/build/mdtc-san && cd ~/build/mdtc-san
+cmake /path/to/market-data-tick-capture \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g -O1" \
+  -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+make -j"$(( $(nproc) / 2 ))" validator_defect_test
+./validator_defect_test
+```
+
 ## Limitations
 
 - Typed-query extension: the capture is 46.7 MiB, not 120 GB (see that
@@ -1079,3 +1238,18 @@ make -j"$(( $(nproc) / 2 ))" order_router_test order_router_bench
   accepted order moves the position), not post-fill risk against actual
   executions, and it has no awareness of cancels or replaces reducing an
   earlier order's exposure.
+- Validation extension: `SessionValidator` is deliberately a second,
+  from-scratch bookkeeper rather than a wrapper around `BookUniverse`, so
+  its 14 checks can catch what `BookUniverse` is designed to tolerate
+  (over-sized Execute/Cancel after a gap); it does not currently check
+  level-aggregate consistency (sum of resting orders at a price equals the
+  level's tracked total) as its own named assertion, only crossed-ness and
+  the per-order checks above. The 280 seeded defects are each a single
+  malformed record spliced into an otherwise clean session; no case
+  combines two simultaneous defects.
+- Publication extension: a session has no calendar date of its own
+  (`publish_parquet.py` is told the date explicitly, see that section);
+  "date partitioned" is demonstrated across 3 distinct dates built from 3
+  separate sessions, not a single multi-day session split by wall-clock
+  rollover. The published Parquet is a demo warehouse under `/tmp`, not a
+  committed artifact (regenerate with the commands in that section).

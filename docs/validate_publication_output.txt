@@ -1,0 +1,4 @@
+partitions cross-checked: 48
+records (independent TCAP read): 900000
+records (DuckDB over published Parquet): 900000
+PASS: 48 of 48 (date, symbol) partitions agree exactly between the independent TCAP read and DuckDB over the published Parquet.

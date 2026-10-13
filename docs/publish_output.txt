@@ -1,0 +1,4 @@
+2026-08-18: published 300000 records from /home/manas/build/publish_demo/session_2026-08-18.tcap -> /home/manas/build/published/date=2026-08-18/
+2026-08-19: published 300000 records from /home/manas/build/publish_demo/session_2026-08-19.tcap -> /home/manas/build/published/date=2026-08-19/
+2026-08-20: published 300000 records from /home/manas/build/publish_demo/session_2026-08-20.tcap -> /home/manas/build/published/date=2026-08-20/
+total published: 900000 records across 3 sessions

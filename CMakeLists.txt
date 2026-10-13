@@ -63,7 +63,18 @@ add_executable(order_router_test  tests/order_router_test.cpp)
 target_link_libraries(order_router_bench Threads::Threads)
 target_link_libraries(order_router_test  Threads::Threads)
 
+# Validation, defect-injection and Parquet publication extension (see
+# README, "Extended: Validation, Defect Injection and Parquet Publication"):
+# the 14-assertion SessionValidator plus the harness that proves it on 40
+# clean sessions and 280 seeded defects, and a no-network session generator
+# feeding the Parquet publication pipeline.
+add_executable(validator_defect_test tests/validator_defect_test.cpp)
+add_executable(generate_session      src/generate_session.cpp)
+target_link_libraries(validator_defect_test Threads::Threads)
+target_link_libraries(generate_session      Threads::Threads)
+
 enable_testing()
 add_test(NAME correctness COMMAND correctness_test)
 add_test(NAME ouch_session COMMAND ouch_session_test)
 add_test(NAME order_router COMMAND order_router_test)
+add_test(NAME validator_defect COMMAND validator_defect_test)
