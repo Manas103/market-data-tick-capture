@@ -1,0 +1,6 @@
+sessions=40 venues=5 total_orders=8000
+fully filled (no residual liquidity shortfall): 6149 / 8000
+total fees paid, fee-aware router : 100604 ticks ($1006.04)
+total fees paid, best-price router: 600268 ticks ($6002.68)
+fee savings vs best-price router   : 83.2401%
+cross-check with python/validate_sor.py docs/order_router_sor_log.csv

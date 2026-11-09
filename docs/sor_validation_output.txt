@@ -1,0 +1,5 @@
+orders cross-checked: 8000
+mismatches: 0
+PASS: independent Python oracle matched the C++ router's fee-aware and naive allocations on all 8000 orders.
+independent fee-savings recomputation: 83.2401%
+C++-logged fee-savings (for comparison): 83.2401%
